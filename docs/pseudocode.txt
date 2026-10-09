@@ -1,0 +1,204 @@
+grid.cpp
+
+FUNCTION grid_index(rows : INTEGER, col : INTEGER, cols : INTEGER) RETURNS INTEGER
+	RETURN rows * cols + col
+END FUNCTION
+
+FUNCTION in_bounds(row : INTEGER, col : INTEGER, rows : INTEGER, cols : INTEGER) RETURNS BOOLEAN
+	RETURN (row >= 0 AND row < rows AND col >= 0 AND col < cols)
+END FUNCTION
+
+
+
+analysis.cpp
+
+FUNCTION station_average(BYREF temps : ARRAY, rows : INTEGER, cols : INTEGER, station : INTEGER, BYREF average : REAL) RETURNS BOOLEAN
+
+	IF rows <= 0 OR cols <= 0 OR NOT CALL in_bounds(station, 0, rows, cols) THEN
+		RETURN FALSE
+    	END IF
+
+	DECLARE sum : REAL
+    	SET sum <- 0.0
+
+    	FOR i = 0 TO cols - 1
+        	SET sum <- sum + temps[CALL grid_index(station, i, cols)]
+    	END FOR
+        
+    	SET average <- sum / cols
+    	RETURN TRUE
+
+END FUNCTION
+
+
+FUNCTION day_average(BYREF temps : ARRAY, rows : INTEGER, cols : INTEGER, day : INTEGER, BYREF average : REAL) RETURNS BOOLEAN
+
+    	IF rows <= 0 OR cols <= 0 OR NOT CALL in_bounds(0, day, rows, cols) THEN
+        	RETURN FALSE
+    	END IF
+
+    	DECLARE sum : REAL
+    	SET sum <- 0.0
+
+    	FOR i = 0 TO rows - 1
+        	SET sum <- sum + temps[CALL grid_index(i, day, cols)]
+    	END FOR
+
+    	SET average <- sum / rows
+    	RETURN TRUE
+
+END FUNCTION
+
+
+FUNCTION find_hottest(BYREF temps : ARRAY, rows : INTEGER, cols : INTEGER, BYREF hot_row : INTEGER, BYREF hot_col : INTEGER) RETURNS BOOLEAN
+
+    	IF rows <= 0 OR cols <= 0 THEN
+        	RETURN FALSE
+    	END IF
+
+    	DECLARE max_temp : REAL
+    	SET max_temp <- temps[CALL grid_index(0, 0, cols)]
+    
+    	DECLARE max_row : INTEGER
+    	SET max_row <- 0
+    
+    	DECLARE max_column : INTEGER
+    	SET max_column <- 0
+
+    	FOR i = 0 TO rows - 1
+        	FOR j = 0 TO cols - 1
+            	DECLARE current_temp : REAL
+            	SET current_temp <- temps[CALL grid_index(i, j, cols)]
+
+            	IF current_temp > max_temp THEN
+                	SET max_temp <- current_temp
+                	SET max_row <- i
+                	SET max_column <- j
+            	END IF
+        	END FOR
+    	END FOR
+
+    	SET hot_row <- max_row
+    	SET hot_col <- max_column
+    	RETURN TRUE
+
+END FUNCTION
+
+
+FUNCTION count_above(BYREF temps : ARRAY, rows : INTEGER, cols : INTEGER, threshold : REAL) RETURNS INTEGER
+
+    	IF rows <= 0 OR cols <= 0 THEN
+        	RETURN 0
+    	END IF
+    
+    	DECLARE count : INTEGER
+    	SET count <- 0
+
+    	FOR i = 0 TO rows - 1
+        	FOR j = 0 TO cols - 1
+            	IF temps[CALL grid_index(i, j, cols)] > threshold THEN
+                	SET count <- count + 1
+            	END IF
+        	END FOR
+    	END FOR
+
+    RETURN count
+
+END FUNCTION	
+
+station.h
+
+FUNCTION find_station(BYREF stations : ARRAY, count : INTEGER, name : STRING) RETURN POINTER To Station
+
+	IF count <= 0 THEN
+		RETURN NULL
+	END IF
+	
+	FOR i = 0 to count - 1
+		IF name = stations[i].name THEN
+			RETURN ADDRESS_OF(stations[i])
+		END IF
+	END FOR
+	
+	RETURN NULL
+
+END FUNCTION
+
+report.cpp
+
+FUNCTION print_report(BYREF stations: ARRAY, BYREF temps : ARRAY, rows : INTEGER, cols : INTEGER)
+
+    	OUTPUT "=== Weather Station Report ==="
+    
+    	SET COLUMN 1 TO WIDTH 16 (LEFT ALIGNED)
+   	 SET COLUMN 2 TO WIDTH 6 (RIGHT ALIGNED)
+
+    	FOR i = 0 TO rows - 1
+        	DECLARE average : REAL
+        	IF CALL station_average(temps, rows, cols, i, average) THEN
+            		OUTPUT stations[i].name, stations[i].elevation, "ft   avg ", average FORMATTED TO TWO DECIMALS, "F"
+        	END IF
+    	END FOR
+
+    	DECLARE hot_row : INTEGER
+    	DECLARE hot_col : INTEGER    
+
+    	IF CALL find_hottest(temps, rows, cols, hot_row, hot_col) THEN
+        	DECLARE hottest_temp : REAL
+        	SET hottest_temp <- temps[CALL grid_index(hot_row, hot_col, cols)]
+        	OUTPUT "Hottest reading: ", hottest_temp FORMATTED TO ONE DECIMAL, " F at ", stations[hot_row].name, " (day ", hot_col + 1, ")"
+    	END IF
+
+END FUNCTION
+
+main.cpp
+
+FUNCTION main
+
+FUNCTION main()
+
+    	CONSTANT station_count <- 4
+    	CONSTANT day_count <- 7
+
+    	DECLARE stations AS ARRAY OF Station CONTAINS
+        	{"Denton", 642.0},
+        	{"Fort Worth", 653.0},
+        	{"Waco", 470.0},
+        	{"Amarillo", 3605.0}
+    	END DECLARE
+
+    	DECLARE temps AS ARRAY OF REAL CONTAINS
+        	91.2, 93.5, 95.0, 97.8, 96.1, 92.4, 90.3,
+        	92.0, 94.1, 96.4, 98.6, 97.2, 93.0, 91.5,
+        	93.4, 95.2, 97.9, 99.3, 98.1, 94.6, 92.8,
+        	84.5, 86.0, 88.2, 90.7, 89.9, 85.3, 83.6
+    	END DECLARE
+
+    	// Next: Calling print_report, count_above, and handling std::getline station lookup...
+	CALL print_report(stations, temps, station_count, day_count)
+
+	DECLARE above_count : INTEGER
+	SET above_count <- CALL count_above(temps, station_count, day_count, 95.0)
+	OUTPUT "Readings above 95.0 F: ", above_count
+
+	OUTPUT "Station to look up: "
+	DECLARE target_name : STRING
+	READ LINE target_name
+	
+	DECLARE match : POINTER TO Station
+	SET match <- CALL find_station(stations, station_count, target_name)
+
+	IF match IS NOT NULL THEN
+		DECLARE row_index : INTEGER
+		SET row_index <- match - stations
+
+		DECLARE lookup_average : REAL
+		IF CALL station_average(temps, station_count, day_count, row_index, lookup_average) THEN
+			OUTPUT target_name, " averaged ", lookup_average FORMATTED TO ONE DECIMAL, " F."
+		END IF
+	ELSE
+		OUTPUT "No station named: ", target_name
+	END IF
+	
+
+END FUNCTION
